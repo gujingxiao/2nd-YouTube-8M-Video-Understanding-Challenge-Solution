@@ -9,14 +9,14 @@ Our code is based on the [YouTube-8M Tensorflow Starter](https://github.com/goog
     04th-July-2018, Updated, Add MultiTaskCombineChainModel which gets GAP=0.86035 upon video-level data.
 
 ## Instructions
-* Video Level Models
+#### Video Level Models
 
 |Models|Loss Function|Base LR|Batch Size|LR_Decay|Other Parameters|GAP|
 |:---|:---|:---|:---|:---|:---|:---|
 |DeepCombineChainModel|MultiTaskCrossEntropyLoss|0.01|1024|0.85|deep_chain_layers=3, deep_chain_relu_cells=1024|0.85407|
 |MultiTaskCombineChainModel|MultiTaskChainCrossEntropyLoss|0.01|1024|0.85|chain_layers_1=3, chain_elu_cells=896, chain_layers_2=2, chain_leaky_relu_cells=896|0.86035|
 
-* Frame Level Models
+#### Frame Level Models
 
 |Models|Loss Function|Base LR|Batch Size|LR_Decay|Other Parameters|GAP|
 |:---|:---|:---|:---|:---|:---|:---|
