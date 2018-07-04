@@ -32,14 +32,14 @@ import eval_util
 import losses
 import readers
 import utils
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 FLAGS = flags.FLAGS
 
 if __name__ == '__main__':
   # Input
-  flags.DEFINE_string("train_dir", "D:/yt8m_data/models/video",
+  flags.DEFINE_string("train_dir", "/home/gujingxiao/projects/yt8m/models/video_level",
                       "存放训练模型的路径")
-  flags.DEFINE_string("input_data_pattern", "D:/yt8m_data/video_level/test/test*.tfrecord",
+  flags.DEFINE_string("input_data_pattern", "/home/gujingxiao/projects/yt8m/video_level/test/test*.tfrecord",
                       "测试集存放路径，用于生成提交到官方的结果")
   flags.DEFINE_string("input_model_tgz", "",
                       "If given, must be path to a .tgz file that was written "
@@ -51,12 +51,8 @@ if __name__ == '__main__':
                       "If --input_model_tgz is given, then this directory will "
                       "be created and the contents of the .tgz file will be "
                       "untarred here.")
-  flags.DEFINE_bool("multitask_loss", True,
-                    "如果训练使用了MultiTaskCrossEntropyLoss，这里就是True"
-                    "如果使用的是其他的函数，这里就是False"
-                    "这个选项非常重要！！！！！！！！！！")
   # Output
-  flags.DEFINE_string("output_file", "D:/yt8m_data/models/video/predictions.csv",
+  flags.DEFINE_string("output_file", "/home/gujingxiao/projects/yt8m/models/predictions/predictions.csv",
                       "结果存放的位置")
   flags.DEFINE_string("output_model_tgz", "",
                       "If given, should be a filename with a .tgz extension, "
@@ -67,11 +63,11 @@ if __name__ == '__main__':
                        "How many predictions to output per video.")
 
   # Other flags.
-  flags.DEFINE_integer("batch_size", 256,
+  flags.DEFINE_integer("batch_size", 4096,
                        "How many examples to process per batch.")
-  flags.DEFINE_integer("num_readers", 6,
+  flags.DEFINE_integer("num_readers", 4,
                        "How many threads to use for reading input files.")
-  flags.DEFINE_float("gpu_ratio", "0.7",
+  flags.DEFINE_float("gpu_ratio", "0.26",
                      "The ratio of gpu needed to use")
 
 def format_lines(video_ids, predictions, top_k):
@@ -143,11 +139,17 @@ def inference(reader, train_dir, data_pattern, out_file_location, batch_size, to
     saver.restore(sess, checkpoint_file)
     input_tensor = tf.get_collection("input_batch_raw")[0]
     num_frames_tensor = tf.get_collection("num_frames")[0]
-    if FLAGS.multitask_loss == True:
-        predictions_tensor = tf.get_collection("predictions")[0] * (1.0 - FLAGS.support_loss_percent)\
-                             + tf.get_collection("support_predictions")[0] * FLAGS.support_loss_percent
-    else:
+    if len(tf.get_collection("support_predictions2")) > 0:
+        print("loss index is 2")
+        predictions_tensor = tf.get_collection("predictions")[0] * FLAGS.support_loss_1 + tf.get_collection("support_predictions")[0] * FLAGS.support_loss_2 + tf.get_collection("predictions2")[0] * FLAGS.support_loss_3 + tf.get_collection("support_predictions2")[0] * FLAGS.support_loss_4
+    elif len(tf.get_collection("support_predictions")) > 0:
+        print("loss index is 1")
+        predictions_tensor = tf.get_collection("predictions")[0] * (1.0 - FLAGS.support_loss_percent) + tf.get_collection("support_predictions")[0] * FLAGS.support_loss_percent
+    elif len(tf.get_collection("predictions")) > 0:
+        print("loss index is 0")
         predictions_tensor = tf.get_collection("predictions")[0]
+    else:
+        raise IOError("loss_index is wrong!!!")
 
     # Workaround for num_epochs issue.
     def set_up_init_ops(variables):

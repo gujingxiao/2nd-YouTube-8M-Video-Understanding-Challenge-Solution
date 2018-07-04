@@ -30,21 +30,21 @@ from tensorflow import flags
 from tensorflow import gfile
 from tensorflow import logging
 import utils
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 FLAGS = flags.FLAGS
 
 if __name__ == "__main__":
   # Dataset flags.
-  flags.DEFINE_string("train_dir", "D:/yt8m_data/models/video",
+  flags.DEFINE_string("train_dir", "/home/gujingxiao/projects/yt8m/models/video_level",
                       "存放训练模型的路径，Tensorboard metrics文件也存在这里 ")
-  flags.DEFINE_string( "eval_data_pattern", "D:/yt8m_data/video_level/validate/validate*.tfrecord",
+  flags.DEFINE_string( "eval_data_pattern", "/home/gujingxiao/projects/yt8m/video_level/validate/validate*.tfrecord",
                       "存放验证集的路径.")
   # Other flags.
-  flags.DEFINE_integer("batch_size", 256, "每个batch计算多少个examples.")
+  flags.DEFINE_integer("batch_size", 2048, "每个batch计算多少个examples.")
   flags.DEFINE_integer("num_readers", 4, "用多少个线程来读取数据.")
   flags.DEFINE_boolean("run_once", True, "是否只验证一次.")
   flags.DEFINE_integer("top_k", 20, "每个视频做出前多少个预测.官方成绩使用前20")
-  flags.DEFINE_float("gpu_ratio", "0.7", "GPU使用率")
+  flags.DEFINE_float("gpu_ratio", "0.26", "GPU使用率")
 
 
 def find_class_by_name(name, modules):
@@ -113,14 +113,28 @@ def build_graph(reader, model, eval_data_pattern, label_loss_fn, batch_size=1024
     predictions = result["predictions"]
     #support_predictions = result["support_predictions"]
     tf.summary.histogram("model_activations", predictions)
+    print(result.keys())
     if "loss" in result.keys():
       label_loss = result["loss"]
     else:
-        if "support_predictions" in result.keys():
+        if "support_predictions2" in result.keys():
+            print('Use MultiTaskChainCrossEntropyLoss Function!!!')
+            support_predictions1 = result["support_predictions"]
+            support_predictions2 = result["predictions2"]
+            support_predictions3 = result["support_predictions2"]
+            label_loss = label_loss_fn.calculate_loss(predictions, support_predictions1, support_predictions2, support_predictions3, labels_batch)
+            tf.add_to_collection("support_predictions", support_predictions1)
+            tf.add_to_collection("predictions2", support_predictions2)
+            tf.add_to_collection("support_predictions2", support_predictions3)
+
+        elif "support_predictions" in result.keys():
+            print('Use MultiTaskCrossEntropyLoss Function!!!')
             support_predictions = result["support_predictions"]
             label_loss = label_loss_fn.calculate_loss(predictions, support_predictions, labels_batch)
-            tf.add_to_collection("support_predictions", support_predictions)
+            tf.add_to_collection("support_predictions", support_predictions1)
+
         else:
+            print("Use CrossEntropyLoss Function!!!")
             label_loss = label_loss_fn.calculate_loss(predictions, labels_batch)
 
   tf.add_to_collection("global_step", global_step)
@@ -253,7 +267,6 @@ def evaluation_loop(video_id_batch, prediction_batch, label_batch, loss,
 
     coord.request_stop()
     coord.join(threads, stop_grace_period_secs=10)
-
     return global_step_val
 
 
@@ -296,7 +309,15 @@ def evaluate():
         batch_size=FLAGS.batch_size)
     logging.info("built evaluation graph")
     video_id_batch = tf.get_collection("video_id_batch")[0]
-    prediction_batch = tf.get_collection("predictions")[0]
+    if len(tf.get_collection('support_predictions2')) > 0:
+      prediction_batch = tf.get_collection("predictions")[0] * FLAGS.support_loss_1 + tf.get_collection("support_predictions")[0] * FLAGS.support_loss_2 + tf.get_collection("predictions2")[0] * FLAGS.support_loss_3 + tf.get_collection("support_predictions2")[0] * FLAGS.support_loss_4
+    elif len(tf.get_collection('support_predictions')) > 0:
+      prediction_batch = tf.get_collection("predictions")[0] * (1.0 - FLAGS.support_loss_percent) + tf.get_collection("support_predictions")[0] * FLAGS.support_loss_percent
+    elif len(tf.get_collection('predictions')) > 0:  
+      prediction_batch = tf.get_collection("predictions")[0]
+    else:
+      raise IOError("'GLOBAL_FLAGS is invalid. Please check if the loss functions is correct.")
+
     label_batch = tf.get_collection("labels")[0]
     loss = tf.get_collection("loss")[0]
     summary_op = tf.get_collection("summary_op")[0]

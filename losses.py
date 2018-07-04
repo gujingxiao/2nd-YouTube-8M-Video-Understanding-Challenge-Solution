@@ -16,11 +16,19 @@
 
 import tensorflow as tf
 from tensorflow import flags
-
 FLAGS = flags.FLAGS
 flags.DEFINE_string("support_type", "label",
                    "type of support label, vertical or frequent or vertical,frequent.")
-flags.DEFINE_float("support_loss_percent", 0.15,
+flags.DEFINE_float("support_loss_percent", 0.35,
+                   "the part that support loss take in the whole loss function.")
+
+flags.DEFINE_float("support_loss_1", 0.3,
+                   "the part that support loss take in the whole loss function.")
+flags.DEFINE_float("support_loss_2", 0.2,
+                   "the part that support loss take in the whole loss function.")
+flags.DEFINE_float("support_loss_3", 0.3,
+                   "the part that support loss take in the whole loss function.")
+flags.DEFINE_float("support_loss_4", 0.2,
                    "the part that support loss take in the whole loss function.")
 
 
@@ -127,3 +135,16 @@ class MultiTaskCrossEntropyLoss(MultiTaskLoss):
     cross_entropy_loss = ce_loss_fn.calculate_loss(predictions, labels, **unused_params)
     cross_entropy_loss2 = ce_loss_fn.calculate_loss(support_predictions, support_labels, **unused_params)
     return cross_entropy_loss * (1.0 - FLAGS.support_loss_percent) + cross_entropy_loss2 * FLAGS.support_loss_percent
+
+class MultiTaskChainCrossEntropyLoss(MultiTaskLoss):
+  """Calculate the loss between the predictions and labels.
+  """
+  def calculate_loss(self, predictions, support_predictions, predictions2, support_predictions2, labels, **unused_params):
+    support_labels = self.get_support(labels)
+    ce_loss_fn = CrossEntropyLoss()
+    cross_entropy_loss1 = ce_loss_fn.calculate_loss(predictions, labels, **unused_params)
+    cross_entropy_loss2 = ce_loss_fn.calculate_loss(support_predictions, labels, **unused_params)
+    cross_entropy_loss3 = ce_loss_fn.calculate_loss(predictions2, labels, **unused_params)
+    cross_entropy_loss4 = ce_loss_fn.calculate_loss(support_predictions2, labels, **unused_params)
+    return cross_entropy_loss1 * FLAGS.support_loss_1 + cross_entropy_loss2 * FLAGS.support_loss_2 + cross_entropy_loss3 * FLAGS.support_loss_3 + cross_entropy_loss4 * FLAGS.support_loss_4
+
