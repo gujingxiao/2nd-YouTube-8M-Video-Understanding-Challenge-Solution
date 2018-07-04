@@ -37,9 +37,9 @@ FLAGS = flags.FLAGS
 
 if __name__ == "__main__":
   # Dataset flags.
-  flags.DEFINE_string("train_dir", "D:/yt8m_data/models/video",
+  flags.DEFINE_string("train_dir", "/home/gujingxiao/projects/yt8m/models/video_level",
                       "存放训练模型的路径")
-  flags.DEFINE_string("train_data_pattern", "D:/yt8m_data/video_level/train/train*.tfrecord",
+  flags.DEFINE_string("train_data_pattern", "/home/gujingxiao/projects/yt8m/video_level/train/train*.tfrecord",
                       "存放训练数据的路径")
   flags.DEFINE_string("feature_names", "mean_rgb, mean_audio",
                       "训练时使用的特征，如果是video level，使用mean_rgb, mean_audio，如果是frame level，使用rgb, audio")
@@ -50,7 +50,7 @@ if __name__ == "__main__":
   # Model flags.
   flags.DEFINE_bool("frame_features", False,
                     "是否使用frame level的特征，使用的话就是用大数据集，否则就是用小数据集")
-  flags.DEFINE_string("model", "DeepCombineChainModel",
+  flags.DEFINE_string("model", "MultiTaskCombineChainModel",
                       "选择使用哪个模型，请注意如果使用frame level的模型，上面的frame features必须为True"
                       "如果这里用video level的模型，上面的frame features必须为false")
   flags.DEFINE_bool("start_new_model", True,
@@ -60,13 +60,14 @@ if __name__ == "__main__":
   # Training flags.
   flags.DEFINE_integer("num_gpu", 1,
                        "使用几个GPU，写几就是使用几个GPU")
-  flags.DEFINE_integer("batch_size", 4,
+  flags.DEFINE_integer("batch_size", 1024,
                        "训练的批大小，video level建议使用1024，frame level建议使用64，128, 256")
 
-  flags.DEFINE_string("label_loss", "MultiTaskCrossEntropyLoss",
+  flags.DEFINE_string("label_loss", "MultiTaskChainCrossEntropyLoss",
                       "选择使用的loss函数，"
                       "video level如果是LogisticModel、moeMoeModel等官模型，选择CrossEntropyLoss"
                       "video level如果是DeepCombineChainModel，选择MultiTaskCrossEntropyLoss"
+                      "video level如果是MultiTaskCombineChainMode,选择MultiTaskChainCrossEntropyLoss"
                       "frame level如果是FrameLevelLogisticModel、DbofModel、LstmModel，选择MultiTaskCrossEntropyLoss"
                       "frame level如果是AttentionBasedLstmMoeModel，选择CrossEntropyLoss")
 
@@ -75,23 +76,23 @@ if __name__ == "__main__":
                      "a weight of 1).")
   flags.DEFINE_float("base_learning_rate", 0.01,
                      "基础学习率，官方默认0.01，暂时不需要修改")
-  flags.DEFINE_float("learning_rate_decay", 0.9,
+  flags.DEFINE_float("learning_rate_decay", 0.85,
                      "Learning rate decay factor to be applied every "
                      "learning_rate_decay_examples.")
   flags.DEFINE_float("learning_rate_decay_examples", 4000000,
                      "训练多少个样本学习率衰减一次，官方默认4000000，暂时不需要修改")
-  flags.DEFINE_integer("num_epochs", 6,
+  flags.DEFINE_integer("num_epochs", 7,
                        "一个epoch代表将整个数据集训练一次，根据经验video level训练6个epoch就差不多了，再多容易过拟合"
                        "frame level目前还没有得出非常好的结果，暂时还不清楚需要训练多少个epoch，建议每隔一段时间尝试验证一次")
   flags.DEFINE_integer("max_steps", None,
                        "The maximum number of iterations of the training loop.")
-  flags.DEFINE_integer("export_model_steps", 3800,
+  flags.DEFINE_integer("export_model_steps", 3780,
                        "每隔多少个steps输出一次模型，根据经验当完整训练一个epoch后，得出的模型相对来说更好"
                        "所以这里使用1024计算，3800个steps最接近官方给出的总数，所以如果修改batch size，这里也需要对应修改"
                        "计算公式为 result = 1024 * 3800 / (修改后的batch size)")
 
   # Other flags.
-  flags.DEFINE_integer("num_readers", 4,
+  flags.DEFINE_integer("num_readers", 6,
                        "How many threads to use for reading input files.")
   flags.DEFINE_string("optimizer", "AdamOptimizer",
                       "What optimizer class to use.")
@@ -280,10 +281,19 @@ def build_graph(reader,
           if "loss" in result.keys():
             label_loss = result["loss"]
           else:
-              if "support_predictions" in result.keys():
+              if FLAGS.label_loss == 'MultiTaskChainCrossEntropyLoss':
+                  print('Use MultiTaskChainCrossEntropyLoss Function!!!')
+                  support_predictions1 = result["support_predictions"]
+                  support_predictions2 = result["predictions2"]
+                  support_predictions3 = result["support_predictions2"]
+                  label_loss = label_loss_fn.calculate_loss(predictions, support_predictions1, support_predictions2, support_predictions3, tower_labels[i])
+
+              elif FLAGS.label_loss == 'MultiTaskrossEntropyLoss':
+                  print('Use MultiTaskCrossEntropyLoss Function!!!')
                   support_predictions = result["support_predictions"]
                   label_loss = label_loss_fn.calculate_loss(predictions, support_predictions, tower_labels[i])
               else:
+                  print('Use CrossEntropyLoss Function!!!')
                   label_loss = label_loss_fn.calculate_loss(predictions, tower_labels[i])
           if "regularization_loss" in result.keys():
             reg_loss = result["regularization_loss"]
@@ -354,7 +364,6 @@ class Trainer(object):
     self.task = task
     self.is_master = (task.type == "master" and task.index == 0)
     self.train_dir = train_dir
-    # self.config = tf.ConfigProto(allow_soft_placement=True,log_device_placement=log_device_placement)
     self.config = tf.ConfigProto()
     self.model = model
     self.reader = reader
@@ -363,10 +372,6 @@ class Trainer(object):
     self.max_steps_reached = False
     self.export_model_steps = export_model_steps
     self.last_model_export_step = 0
-
-#     if self.is_master and self.task.index > 0:
-#       raise StandardError("%s: Only one replica of master expected",
-#                           task_as_string(self.task))
 
   def run(self, start_new_model=False):
     """Performs training on the currently defined Tensorflow graph.
