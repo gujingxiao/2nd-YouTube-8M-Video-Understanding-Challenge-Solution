@@ -317,6 +317,87 @@ class GatedDbofWithNetFVModelLF(models.BaseModel):
             is_training=is_training,
             **unused_params)
 
+class NetFVwithNetVladModelLF(models.BaseModel):
+
+    def create_model(self, model_input, vocab_size, num_frames, iterations=None,
+                     add_batch_norm=None, sample_random_frames=None, cluster_size=None,
+                     hidden_size=None, is_training=True, **unused_params):
+        iterations = FLAGS.iterations
+        fv_cluster_size = FLAGS.fv_cluster_size
+        fv_hidden_size = FLAGS.fv_hidden_size
+        netvlad_cluster_size = FLAGS.netvlad_cluster_size
+        netvlad_hidden_size = FLAGS.netvlad_hidden_size
+
+        #======= Process Input ========
+        num_frames = tf.cast(tf.expand_dims(num_frames, 1), tf.float32)
+        model_input = utils.SampleRandomFrames(model_input, num_frames, iterations)
+        max_frames = model_input.get_shape().as_list()[1]
+        feature_size = model_input.get_shape().as_list()[2]
+        reshaped_input = tf.reshape(model_input, [-1, feature_size])
+        reshaped_input = slim.batch_norm(reshaped_input, center=True, scale=True, is_training=is_training, scope="input_bn")
+
+        #====== NetFVModel ======
+        feature_NetFV = NetFV(1152, max_frames, fv_cluster_size, add_batch_norm, is_training)
+
+        with tf.variable_scope("feature_FV"):
+            fv = feature_NetFV.forward(reshaped_input)
+
+        fv_dim = fv.get_shape().as_list()[1]
+        hidden1_weights_fv = tf.get_variable("hidden1_weights_netfv", [fv_dim, fv_hidden_size],
+                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(fv_cluster_size)))
+
+        activation_fv = tf.matmul(fv, hidden1_weights_fv)
+        activation_fv = slim.batch_norm(activation_fv, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netfv")
+        activation_fv = tf.nn.leaky_relu(activation_fv)
+        # ====== NetVladModel ======
+        feature_NetVLAD = NetVLAGD(1152, max_frames, netvlad_cluster_size, True, is_training)
+
+        with tf.variable_scope("feature_VLAD"):
+            vlad = feature_NetVLAD.forward(reshaped_input)
+
+        vlad_dim = vlad.get_shape().as_list()[1]
+        hidden1_weights = tf.get_variable("hidden1_weights_netvlad", [vlad_dim, netvlad_hidden_size],
+                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(netvlad_cluster_size)))
+
+        # Batch norm and Relu
+        activation_vlad = tf.matmul(vlad, hidden1_weights)
+        activation_vlad = slim.batch_norm(activation_vlad, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netvlad")
+        activation_vlad = tf.nn.elu(activation_vlad)
+
+        # Gating
+        gating_weights_vlad = tf.get_variable("gating_weights_netvlad", [netvlad_hidden_size, netvlad_hidden_size],
+                                         initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(netvlad_hidden_size)))
+        gates_vlad = tf.matmul(activation_vlad, gating_weights_vlad)
+
+        # Batch norm
+        gates_vlad = slim.batch_norm(gates_vlad, center=True, scale=True, is_training=is_training, scope="gating_bn_netvlad")
+
+        # Activations
+        gates_vlad = tf.sigmoid(gates_vlad)
+        activation_vlad = tf.multiply(activation_vlad, gates_vlad)
+
+        # Final activation
+        final_activation = tf.concat([activation_fv, activation_vlad], 1)
+        print('shape:', final_activation.get_shape().as_list())
+        aggregated_model = getattr(video_level_models, FLAGS.video_level_classifier_model)
+
+        return aggregated_model().create_model(
+            model_input=final_activation,
+            vocab_size=vocab_size,
+            is_training=is_training,
+            **unused_params)
+
+        # Gating
+        gating_weights_fv = tf.get_variable("gating_weights_netfv", [fv_hidden_size, fv_hidden_size],
+                                         initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(fv_hidden_size)))
+        gates_fv = tf.matmul(activation_fv, gating_weights_fv)
+        gates_fv = slim.batch_norm(gates_fv, center=True, scale=True, is_training=is_training, scope="gating_bn_netfv")
+
+        gates_fv = tf.sigmoid(gates_fv)
+        activation_fv = tf.multiply(activation_fv, gates_fv)
+
+
+     
 class MultiCombinedFeatureFrameModelLF(models.BaseModel):
 
     def create_model(self, model_input, vocab_size, num_frames, iterations=None,
