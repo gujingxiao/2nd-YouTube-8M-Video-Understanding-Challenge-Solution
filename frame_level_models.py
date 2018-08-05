@@ -31,47 +31,75 @@ flags.DEFINE_integer("iterations", 150,
                      "Number of frames per batch for DBoF.")
 
 # ========== For MultiCombinedFeatureFrameModelLF ========================
-# FLAGS for NetVLAGDModelLF
-flags.DEFINE_integer("netvlad_cluster_size", 56,
-                     "Number of units in the NetVLAD cluster layer.")
-flags.DEFINE_integer("netvlad_hidden_size", 768,
-                     "Number of units in the NetVLAD hidden layer.")
-
-# FLAGS for NetFVModelLF
-#flags.DEFINE_integer("fv_cluster_size", 56,
+# # FLAGS for NetVLAGDModelLF
+# flags.DEFINE_integer("netvlad_cluster_size", 56,
+#                      "Number of units in the NetVLAD cluster layer.")
+# flags.DEFINE_integer("netvlad_hidden_size", 768,
+#                      "Number of units in the NetVLAD hidden layer.")
+#
+# # FLAGS for NetFVModelLF
+# flags.DEFINE_integer("fv_cluster_size", 56,
 #                     "Number of units in the NetVLAD cluster layer.")
-#flags.DEFINE_integer("fv_hidden_size", 768,
+# flags.DEFINE_integer("fv_hidden_size", 768,
 #                     "Number of units in the NetVLAD hidden layer.")
-#flags.DEFINE_float("fv_coupling_factor", 0.01,
+# flags.DEFINE_float("fv_coupling_factor", 0.01,
 #                     "Coupling factor.")
-
-# FLAGS for Gated-Soft-DbofModelLF
-#flags.DEFINE_integer("dbof_cluster_size", 2048,
+#
+# # FLAGS for Gated-Soft-DbofModelLF
+# flags.DEFINE_integer("dbof_cluster_size", 2048,
 #                     "Number of units in the DBoF cluster layer.")
-#flags.DEFINE_integer("dbof_hidden_size", 512,
+# flags.DEFINE_integer("dbof_hidden_size", 512,
 #                     "Number of units in the DBoF hidden layer.")
+# flags.DEFINE_bool("softdbof_maxpool", False,
+#                   'add max pool to soft dbof')
 # ======================= End Here ========================================
 
 
-# =============== For  GatedDbofWithNetFVModelLF ==========================
-# FLAGS for NetFVModelLF
-flags.DEFINE_integer("fv_cluster_size", 60,
+# =============== For  GatedDbofWithNetFVModelLF 0.87089 ==================
+# # FLAGS for NetFVModelLF
+# flags.DEFINE_integer("fv_cluster_size", 52,
+#                     "Number of units in the NetVLAD cluster layer.")
+# flags.DEFINE_integer("fv_hidden_size", 1024,
+#                     "Number of units in the NetVLAD hidden layer.")
+# flags.DEFINE_float("fv_coupling_factor", 0.01,
+#                     "Coupling factor.")
+#
+# # FLAGS for Gated-Soft-DbofModelLF
+# flags.DEFINE_integer("dbof_cluster_size", 2560,
+#                     "Number of units in the DBoF cluster layer.")
+# flags.DEFINE_integer("dbof_hidden_size", 1024,
+#                     "Number of units in the DBoF hidden layer.")
+# flags.DEFINE_bool("softdbof_maxpool", False,
+#                   'add max pool to soft dbof')
+# ======================= End Here ========================================
+
+# ========== For MultiEnsembleFrameModelLF ========================
+# FLAGS for NetVLAGDModelLF
+flags.DEFINE_integer("netvlad_cluster_size", 40,
                      "Number of units in the NetVLAD cluster layer.")
-flags.DEFINE_integer("fv_hidden_size", 1024,
+flags.DEFINE_integer("netvlad_hidden_size", 736,
                      "Number of units in the NetVLAD hidden layer.")
+
+# FLAGS for NetFVModelLF
+flags.DEFINE_integer("fv_cluster_size", 40,
+                    "Number of units in the NetVLAD cluster layer.")
+flags.DEFINE_integer("fv_hidden_size", 736,
+                    "Number of units in the NetVLAD hidden layer.")
 flags.DEFINE_float("fv_coupling_factor", 0.01,
-                     "Coupling factor.")
+                    "Coupling factor.")
 
 # FLAGS for Gated-Soft-DbofModelLF
 flags.DEFINE_integer("dbof_cluster_size", 2048,
-                     "Number of units in the DBoF cluster layer.")
-flags.DEFINE_integer("dbof_hidden_size", 1024,
-                     "Number of units in the DBoF hidden layer.")
+                    "Number of units in the DBoF cluster layer.")
+flags.DEFINE_integer("dbof_hidden_size", 736,
+                    "Number of units in the DBoF hidden layer.")
+flags.DEFINE_bool("softdbof_maxpool", False,
+                  'add max pool to soft dbof')
 # ======================= End Here ========================================
 
 
 # FLAGS for general purpose
-flags.DEFINE_string("video_level_classifier_model", "DeepCombineChainModel",
+flags.DEFINE_string("video_level_classifier_model", "MultiEnsembleChainModel",
                     "Some Frame-Level models can be decomposed into a generalized"
                     "pooling operation followed by a classifier layer")
 
@@ -87,16 +115,16 @@ class NetVLAGD():
         self.cluster_size = cluster_size
 
     def forward(self, reshaped_input):
-        cluster_weights = tf.get_variable("cluster_weights", [self.feature_size, self.cluster_size],
+        cluster_weights = tf.get_variable("cluster_weights_netvlad", [self.feature_size, self.cluster_size],
                                           initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(self.feature_size)))
 
         activation = tf.matmul(reshaped_input, cluster_weights)
-        activation = slim.batch_norm(activation, center=True, scale=True, is_training=self.is_training, scope="cluster_bn")
+        activation = slim.batch_norm(activation, center=True, scale=True, is_training=self.is_training, scope="cluster_bn_netvlad")
 
         activation = tf.nn.softmax(activation)
         activation = tf.reshape(activation, [-1, int(self.max_frames), int(self.cluster_size)])
 
-        gate_weights = tf.get_variable("gate_weights", [1, int(self.cluster_size), int(self.feature_size)],
+        gate_weights = tf.get_variable("gate_weights_netvlad", [1, int(self.cluster_size), int(self.feature_size)],
                                        initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(self.feature_size)))
 
         gate_weights = tf.sigmoid(gate_weights)
@@ -124,17 +152,17 @@ class NetFV():
         self.cluster_size = cluster_size
 
     def forward(self, reshaped_input):
-        cluster_weights = tf.get_variable("cluster_weights", [self.feature_size, self.cluster_size],
+        cluster_weights = tf.get_variable("cluster_weights_netfv", [self.feature_size, self.cluster_size],
                                           initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(self.feature_size)))
 
-        covar_weights = tf.get_variable("covar_weights", [self.feature_size, self.cluster_size],
+        covar_weights = tf.get_variable("covar_weights_netfv", [self.feature_size, self.cluster_size],
                                         initializer=tf.random_normal_initializer(mean=1.0, stddev=1 / math.sqrt(self.feature_size)))
         covar_weights = tf.square(covar_weights)
         eps = tf.constant([1e-6])
         covar_weights = tf.add(covar_weights, eps)
 
         activation = tf.matmul(reshaped_input, cluster_weights)
-        activation = slim.batch_norm(activation, center=True, scale=True, is_training=self.is_training, scope="cluster_bn")
+        activation = slim.batch_norm(activation, center=True, scale=True, is_training=self.is_training, scope="cluster_bn_netfv")
         activation = tf.nn.softmax(activation)
         activation = tf.reshape(activation, [-1, self.max_frames, self.cluster_size])
 
@@ -188,11 +216,11 @@ class GatedDBoF():
         max_frames = self.max_frames
         is_training = self.is_training
 
-        cluster_weights = tf.get_variable("cluster_weights", [feature_size, cluster_size],
+        cluster_weights = tf.get_variable("cluster_weights_gatedbof", [feature_size, cluster_size],
                                           initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(feature_size)))
 
         activation = tf.matmul(reshaped_input, cluster_weights)
-        activation = slim.batch_norm(activation, center=True, scale=True, is_training=is_training, scope="cluster_bn")
+        activation = slim.batch_norm(activation, center=True, scale=True, is_training=is_training, scope="cluster_bn_gatedbof")
 
         activation = tf.nn.softmax(activation)
         activation = tf.reshape(activation, [-1, max_frames, cluster_size])
@@ -201,15 +229,15 @@ class GatedDBoF():
         activation_max = tf.reduce_max(activation, 1)
         activation_max = tf.nn.l2_normalize(activation_max, 1)
 
-        dim_red = tf.get_variable("dim_red", [cluster_size, feature_size],
+        dim_red = tf.get_variable("dim_red_gatedbof", [cluster_size, feature_size],
                                   initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(feature_size)))
 
-        cluster_weights_2 = tf.get_variable("cluster_weights_2", [feature_size, cluster_size],
+        cluster_weights_2 = tf.get_variable("cluster_weights_2_gatedbof", [feature_size, cluster_size],
                                             initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(feature_size)))
 
         activation = tf.matmul(activation_max, dim_red)
         activation = tf.matmul(activation, cluster_weights_2)
-        activation = slim.batch_norm(activation, center=True, scale=True, is_training=is_training, scope="cluster_bn_2")
+        activation = slim.batch_norm(activation, center=True, scale=True, is_training=is_training, scope="cluster_bn_2_gatedbof")
 
         activation = tf.sigmoid(activation)
         activation = tf.multiply(activation, activation_sum)
@@ -231,11 +259,11 @@ class SoftDBoF():
         max_frames = self.max_frames
         is_training = self.is_training
 
-        cluster_weights = tf.get_variable("cluster_weights", [feature_size, cluster_size],
+        cluster_weights = tf.get_variable("cluster_weights_softdbof", [feature_size, cluster_size],
                                           initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(feature_size)))
 
         activation = tf.matmul(reshaped_input, cluster_weights)
-        activation = slim.batch_norm(activation, center=True, scale=True, is_training=is_training, scope="cluster_bn")
+        activation = slim.batch_norm(activation, center=True, scale=True, is_training=is_training, scope="cluster_bn_softdbof")
 
         activation = tf.nn.softmax(activation)
         activation = tf.reshape(activation, [-1, max_frames, cluster_size])
@@ -317,87 +345,6 @@ class GatedDbofWithNetFVModelLF(models.BaseModel):
             is_training=is_training,
             **unused_params)
 
-class NetFVwithNetVladModelLF(models.BaseModel):
-
-    def create_model(self, model_input, vocab_size, num_frames, iterations=None,
-                     add_batch_norm=None, sample_random_frames=None, cluster_size=None,
-                     hidden_size=None, is_training=True, **unused_params):
-        iterations = FLAGS.iterations
-        fv_cluster_size = FLAGS.fv_cluster_size
-        fv_hidden_size = FLAGS.fv_hidden_size
-        netvlad_cluster_size = FLAGS.netvlad_cluster_size
-        netvlad_hidden_size = FLAGS.netvlad_hidden_size
-
-        #======= Process Input ========
-        num_frames = tf.cast(tf.expand_dims(num_frames, 1), tf.float32)
-        model_input = utils.SampleRandomFrames(model_input, num_frames, iterations)
-        max_frames = model_input.get_shape().as_list()[1]
-        feature_size = model_input.get_shape().as_list()[2]
-        reshaped_input = tf.reshape(model_input, [-1, feature_size])
-        reshaped_input = slim.batch_norm(reshaped_input, center=True, scale=True, is_training=is_training, scope="input_bn")
-
-        #====== NetFVModel ======
-        feature_NetFV = NetFV(1152, max_frames, fv_cluster_size, add_batch_norm, is_training)
-
-        with tf.variable_scope("feature_FV"):
-            fv = feature_NetFV.forward(reshaped_input)
-
-        fv_dim = fv.get_shape().as_list()[1]
-        hidden1_weights_fv = tf.get_variable("hidden1_weights_netfv", [fv_dim, fv_hidden_size],
-                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(fv_cluster_size)))
-
-        activation_fv = tf.matmul(fv, hidden1_weights_fv)
-        activation_fv = slim.batch_norm(activation_fv, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netfv")
-        activation_fv = tf.nn.leaky_relu(activation_fv)
-        # ====== NetVladModel ======
-        feature_NetVLAD = NetVLAGD(1152, max_frames, netvlad_cluster_size, True, is_training)
-
-        with tf.variable_scope("feature_VLAD"):
-            vlad = feature_NetVLAD.forward(reshaped_input)
-
-        vlad_dim = vlad.get_shape().as_list()[1]
-        hidden1_weights = tf.get_variable("hidden1_weights_netvlad", [vlad_dim, netvlad_hidden_size],
-                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(netvlad_cluster_size)))
-
-        # Batch norm and Relu
-        activation_vlad = tf.matmul(vlad, hidden1_weights)
-        activation_vlad = slim.batch_norm(activation_vlad, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netvlad")
-        activation_vlad = tf.nn.elu(activation_vlad)
-
-        # Gating
-        gating_weights_vlad = tf.get_variable("gating_weights_netvlad", [netvlad_hidden_size, netvlad_hidden_size],
-                                         initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(netvlad_hidden_size)))
-        gates_vlad = tf.matmul(activation_vlad, gating_weights_vlad)
-
-        # Batch norm
-        gates_vlad = slim.batch_norm(gates_vlad, center=True, scale=True, is_training=is_training, scope="gating_bn_netvlad")
-
-        # Activations
-        gates_vlad = tf.sigmoid(gates_vlad)
-        activation_vlad = tf.multiply(activation_vlad, gates_vlad)
-
-        # Final activation
-        final_activation = tf.concat([activation_fv, activation_vlad], 1)
-        print('shape:', final_activation.get_shape().as_list())
-        aggregated_model = getattr(video_level_models, FLAGS.video_level_classifier_model)
-
-        return aggregated_model().create_model(
-            model_input=final_activation,
-            vocab_size=vocab_size,
-            is_training=is_training,
-            **unused_params)
-
-        # Gating
-        gating_weights_fv = tf.get_variable("gating_weights_netfv", [fv_hidden_size, fv_hidden_size],
-                                         initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(fv_hidden_size)))
-        gates_fv = tf.matmul(activation_fv, gating_weights_fv)
-        gates_fv = slim.batch_norm(gates_fv, center=True, scale=True, is_training=is_training, scope="gating_bn_netfv")
-
-        gates_fv = tf.sigmoid(gates_fv)
-        activation_fv = tf.multiply(activation_fv, gates_fv)
-
-
-     
 class MultiCombinedFeatureFrameModelLF(models.BaseModel):
 
     def create_model(self, model_input, vocab_size, num_frames, iterations=None,
@@ -469,7 +416,7 @@ class MultiCombinedFeatureFrameModelLF(models.BaseModel):
         # Batch norm and Relu
         activation_vlad = tf.matmul(vlad, hidden1_weights)
         activation_vlad = slim.batch_norm(activation_vlad, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netvlad")
-        activation_vlad = tf.nn.relu6(activation_vlad)
+        activation_vlad = tf.nn.leaky_relu(activation_vlad)
 
         # Gating
         gating_weights_vlad = tf.get_variable("gating_weights_netvlad", [netvlad_hidden_size, netvlad_hidden_size],
@@ -490,6 +437,118 @@ class MultiCombinedFeatureFrameModelLF(models.BaseModel):
 
         return aggregated_model().create_model(
             model_input=final_activation,
+            vocab_size=vocab_size,
+            is_training=is_training,
+            **unused_params)
+
+
+class MultiEnsembleFrameModelLF(models.BaseModel):
+
+    def create_model(self, model_input, vocab_size, num_frames, iterations=None,
+                     add_batch_norm=None, sample_random_frames=None, cluster_size=None,
+                     hidden_size=None, is_training=True, **unused_params):
+        iterations = FLAGS.iterations
+        dbof_cluster_size = FLAGS.dbof_cluster_size
+        dbof_hidden_size = FLAGS.dbof_hidden_size
+        fv_cluster_size = FLAGS.fv_cluster_size
+        fv_hidden_size = FLAGS.fv_hidden_size
+        netvlad_cluster_size = FLAGS.netvlad_cluster_size
+        netvlad_hidden_size = FLAGS.netvlad_hidden_size
+
+        #======= Process Input ========
+        num_frames = tf.cast(tf.expand_dims(num_frames, 1), tf.float32)
+        model_input = utils.SampleRandomFrames(model_input, num_frames, iterations)
+        max_frames = model_input.get_shape().as_list()[1]
+        feature_size = model_input.get_shape().as_list()[2]
+        reshaped_input = tf.reshape(model_input, [-1, feature_size])
+        reshaped_input = slim.batch_norm(reshaped_input, center=True, scale=True, is_training=is_training, scope="input_bn")
+
+        #====== Soft Dbof =======
+        feature_SoftDbof = SoftDBoF(1152, max_frames, dbof_cluster_size, is_training)
+
+        with tf.variable_scope("feature_SoftDBOF"):
+            softdbof = feature_SoftDbof.forward(reshaped_input)
+
+        softdbof_dim = softdbof.get_shape().as_list()[1]
+        hidden1_weights_softdbof = tf.get_variable("hidden1_weights_softdbof", [softdbof_dim, dbof_hidden_size],
+                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(dbof_cluster_size)))
+
+        activation_softdbof = tf.matmul(softdbof, hidden1_weights_softdbof)
+        activation_softdbof = slim.batch_norm(activation_softdbof, center=True, scale=True, is_training=is_training, scope="hidden1_bn_softdbof")
+        activation_softdbof = tf.nn.leaky_relu(activation_softdbof)
+
+        #====== Gated Dbof =======
+        feature_GatedDbof = GatedDBoF(1152, max_frames, dbof_cluster_size, is_training)
+
+        with tf.variable_scope("feature_GatedDBOF"):
+            gatedbof = feature_GatedDbof.forward(reshaped_input)
+
+        gatedbof_dim = gatedbof.get_shape().as_list()[1]
+        hidden1_weights_gatedbof = tf.get_variable("hidden1_weights_gateddbof", [gatedbof_dim, dbof_hidden_size],
+                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(dbof_cluster_size)))
+
+        activation_gatedbof = tf.matmul(gatedbof, hidden1_weights_gatedbof)
+        activation_gatedbof = slim.batch_norm(activation_gatedbof, center=True, scale=True, is_training=is_training, scope="hidden1_bn_gatedbof")
+        activation_gatedbof = tf.nn.elu(activation_gatedbof)
+
+        #====== NetFVModel ======
+        feature_NetFV = NetFV(1152, max_frames, fv_cluster_size, add_batch_norm, is_training)
+
+        with tf.variable_scope("feature_FV"):
+            fv = feature_NetFV.forward(reshaped_input)
+
+        fv_dim = fv.get_shape().as_list()[1]
+        hidden1_weights_fv = tf.get_variable("hidden1_weights_netfv", [fv_dim, fv_hidden_size],
+                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(fv_cluster_size)))
+
+        activation_fv = tf.matmul(fv, hidden1_weights_fv)
+        activation_fv = slim.batch_norm(activation_fv, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netfv")
+        activation_fv = tf.nn.leaky_relu(activation_fv)
+
+        # Gating
+        gating_weights_fv = tf.get_variable("gating_weights_netfv", [fv_hidden_size, fv_hidden_size],
+                                         initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(fv_hidden_size)))
+        gates_fv = tf.matmul(activation_fv, gating_weights_fv)
+        gates_fv = slim.batch_norm(gates_fv, center=True, scale=True, is_training=is_training, scope="gating_bn_netfv")
+
+        gates_fv = tf.sigmoid(gates_fv)
+        activation_fv = tf.multiply(activation_fv, gates_fv)
+
+        # ====== NetVladModel ======
+        feature_NetVLAD = NetVLAGD(1152, max_frames, netvlad_cluster_size, True, is_training)
+
+        with tf.variable_scope("feature_VLAD"):
+            vlad = feature_NetVLAD.forward(reshaped_input)
+
+        vlad_dim = vlad.get_shape().as_list()[1]
+        hidden1_weights = tf.get_variable("hidden1_weights_netvlad", [vlad_dim, netvlad_hidden_size],
+                                          initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(netvlad_cluster_size)))
+
+        # Batch norm and Relu
+        activation_vlad = tf.matmul(vlad, hidden1_weights)
+        activation_vlad = slim.batch_norm(activation_vlad, center=True, scale=True, is_training=is_training, scope="hidden1_bn_netvlad")
+        activation_vlad = tf.nn.elu(activation_vlad)
+
+        # Gating
+        gating_weights_vlad = tf.get_variable("gating_weights_netvlad", [netvlad_hidden_size, netvlad_hidden_size],
+                                         initializer=tf.random_normal_initializer(stddev=1 / math.sqrt(netvlad_hidden_size)))
+        gates_vlad = tf.matmul(activation_vlad, gating_weights_vlad)
+
+        # Batch norm
+        gates_vlad = slim.batch_norm(gates_vlad, center=True, scale=True, is_training=is_training, scope="gating_bn_netvlad")
+
+        # Activations
+        gates_vlad = tf.sigmoid(gates_vlad)
+        activation_vlad = tf.multiply(activation_vlad, gates_vlad)
+
+        # Final activation
+        softdbof_netvlad_activation = tf.concat([activation_softdbof, activation_vlad], 1)
+        gatedbof_netfv_activation = tf.concat([activation_gatedbof, activation_fv], 1)
+        aggregated_model = getattr(video_level_models, FLAGS.video_level_classifier_model)
+
+        return aggregated_model().create_model(
+            model_input1=softdbof_netvlad_activation,
+            model_input2=gatedbof_netfv_activation,
             vocab_size=vocab_size,
             is_training=is_training,
             **unused_params)
