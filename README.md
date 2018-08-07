@@ -1,4 +1,4 @@
-# Model Documentation
+# 2nd YouTube-8M - CV_Group
 This is code of The 2nd YouTube-8M Video Understanding Challenge Ranking 23rd. 
 
 Our code is based on the [YouTube-8M Tensorflow Starter](https://github.com/google/youtube-8m) Code.
