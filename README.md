@@ -10,7 +10,7 @@ Some models are inpired and modified from [Youtube-8M-WILLOW](https://github.com
     04th-July-2018, Updated, Add MultiTaskCombineChainModel which gets GAP = 0.86035 upon video-level data.
     20th-July-2018, Updated, Add new frame level models which gets greater than GAP= 0.865 upon frame-level data.
     05th-August-2018, Updated, Add MultiEnsembleFrameModelLF and update GatedDbofWithNetFVModelLF to GAP = 0.87089.
-    07th-August-2018, Updated, Challenge finished and the final ranking is 23rd. GAP=0.87662 
+    07th-August-2018, Updated, Challenge finished and the final ranking is 14rd. GAP=0.87662 
 
 ## Instructions
 #### Video Level Models
